@@ -4,30 +4,40 @@ import pg from "pg";
 
 const globalForPrisma = global;
 
-// Setup the connection pool
-const connectionString = process.env.DATABASE_URL;
-const pool = new pg.Pool({ connectionString });
-const adapter = new PrismaPg(pool);
+// Setup the connection pool with better error handling
+let pool;
+let adapter;
+
+try {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+        console.warn("DATABASE_URL not set, Prisma client will skip adapter initialization");
+    } else {
+        pool = new pg.Pool({ 
+            connectionString,
+            max: 20,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 2000,
+        });
+
+        adapter = new PrismaPg(pool);
+    }
+} catch (err) {
+    console.error("Failed to initialize database pool:", err.message);
+}
 
 // Next.js standard Prisma singleton pattern
 if (!globalForPrisma.prisma) {
-    globalForPrisma.prisma = new PrismaClient({ adapter });
+    const clientOptions = {
+        log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error']
+    };
+    
+    if (adapter) {
+        clientOptions.adapter = adapter;
+    }
+    
+    globalForPrisma.prisma = new PrismaClient(clientOptions);
 }
 
-// In development, we refresh if the client is missing models
-if (process.env.NODE_ENV !== 'production') {
-    const p = globalForPrisma.prisma;
-    if (p && (!p.sosAlert || !p.comment || !p.notification || !p.globalAlert)) {
-        globalForPrisma.prisma = new PrismaClient({ adapter });
-    }
-}
-
-// Final export using a getter-like approach via Proxy
-export const prisma = new Proxy({}, {
-    get(target, prop) {
-        if (!globalForPrisma.prisma) {
-            globalForPrisma.prisma = new PrismaClient({ adapter });
-        }
-        return globalForPrisma.prisma[prop];
-    }
-});
+// Export the prisma client
+export const prisma = globalForPrisma.prisma;

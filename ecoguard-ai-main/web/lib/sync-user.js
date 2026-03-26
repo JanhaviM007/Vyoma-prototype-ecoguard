@@ -3,13 +3,13 @@ import { currentUser } from "@clerk/nextjs/server";
 import { prisma } from "./prisma";
 
 export async function syncUserToDatabase() {
-  const user = await currentUser();
-  if (!user) return null;
-
-  const email = user.emailAddresses?.[0]?.emailAddress;
-  if (!email) return null;
-
   try {
+    const user = await currentUser();
+    if (!user || !user.id) return null;
+
+    const email = user.emailAddresses?.[0]?.emailAddress;
+    if (!email) return null;
+
     // Primary path: upsert by Clerk user id
     const profile = await prisma.profile.upsert({
       where: { clerkId: user.id },
@@ -23,18 +23,25 @@ export async function syncUserToDatabase() {
 
     return profile;
   } catch (err) {
-    // If the email already exists (e.g. old Clerk account removed/recreated),
-    // "adopt" the existing profile row by updating its clerkId.
+    // Handle specific Prisma errors
     if (err?.code === "P2002") {
-      const profile = await prisma.profile.update({
-        where: { email },
-        data: { clerkId: user.id },
-      });
-      return profile;
+      // Unique constraint violation - try to adopt existing profile
+      try {
+        const user = await currentUser();
+        if (user?.emailAddresses?.[0]?.emailAddress) {
+          const profile = await prisma.profile.update({
+            where: { email: user.emailAddresses[0].emailAddress },
+            data: { clerkId: user.id },
+          });
+          return profile;
+        }
+      } catch (innerErr) {
+        console.error("Failed to adopt existing profile:", innerErr.message);
+      }
     }
-
-    throw err;
+    
+    // Log the error but don't crash - allow the page to render even if sync fails
+    console.error("User sync failed:", err.message);
+    return null;
   }
-
-  // unreachable
 }
