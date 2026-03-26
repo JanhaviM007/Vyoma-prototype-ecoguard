@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Profile {
+  id                    String   @id @default(cuid())
+  clerkId               String   @unique
+  email                 String   @unique
+  role                  String   @default("CITIZEN")
+  
+  // Consolidated Health & Vulnerability Data
+  ageRange              String?  // e.g., "18-60", "60+"
+  chronicConditions     String[] // e.g., ["Asthma", "Sinusitis"]
+  currentSymptoms       String[] // e.g., ["Breathlessness", "Cough"]
+  isVulnerable          Boolean  @default(false)
+  hasSetupProfile       Boolean  @default(false)
+  
+  // Relations
+  reports               Report[]
+  notifications         Notification[] // Added notifications relation
+  comments              Comment[]
+  sosAlerts             SosAlert[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  clerkId   String
+  profile   Profile  @relation(fields: [clerkId], references: [clerkId])
+  title     String
+  message   String
+  type      String   @default("INFO") // INFO, WARNING, SUCCESS, ALERT
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  type        String   // Flood, Pollution, Heat, etc.
+  description String
+  imageUrl    String
+  location    String?  
+  status      String   @default("PENDING") // PENDING, RESOLVED, CRITICAL, IN_PROGRESS
+  confidenceScore Float @default(0) // AI Verification Score
+  isVerified  Boolean  @default(false)
+  
+  // Advanced Authority Fields
+  resolutionNotes String?
+  manuallyVerifiedBy String? // Clerk ID of the authority who manual verified
+  
+  // Relations
+  authorId    String
+  author      Profile  @relation(fields: [authorId], references: [clerkId])
+  comments    Comment[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt @default(now())
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  authorId  String
+  author    Profile  @relation(fields: [authorId], references: [clerkId])
+  reportId  String
+  report    Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model SosAlert {
+  id          String   @id @default(cuid())
+  clerkId     String
+  profile     Profile  @relation(fields: [clerkId], references: [clerkId])
+  location    String?
+  status      String   @default("ACTIVE") // ACTIVE, RESOLVED
+  createdAt   DateTime @default(now())
+}
+
+model GlobalAlert {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  type      String   @default("INFO") // INFO, WARNING, CRITICAL
+  authorId  String   // Clerk ID of the authority
+  createdAt DateTime @default(now())
+}
+
+model RiskArea {
+  id           String   @id @default(cuid())
+  areaName     String   @unique // e.g., "Hadapsar, Pune"
+  
+  // Current Risk Vectors
+  floodRisk    String   // HIGH, MODERATE, LOW
+  airQuality   String   // POOR, MODERATE, GOOD
+  heatRisk     String   // LOW, MODERATE, HIGH
+  
+  // Predictive Forecasts
+  forecast6h   String   
+  forecast24h  String   
+  forecast72h  String   
+  
+  insights     String[] 
+  updatedAt    DateTime @updatedAt
+}
+
+model HealthInsight {
+  id              String   @id @default(uuid())
+  clerkId         String
+  insight         String
+  temperature     Float
+  humidity        Float
+  aqi             Float
+  pm25            Float?   // Added PM2.5
+  uv              Float?   // Added UV Index
+  visibility      Float?   // Added Visibility
+  recommendations String?  // Added for structured JSON storage
+  riskLevel       String?  // e.g., "LOW", "MODERATE", "CRITICAL"
+  createdAt       DateTime @default(now())
+}
